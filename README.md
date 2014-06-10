@@ -47,7 +47,7 @@ Using
 
 Automated CRC32 generation in very usefull when custom bootloader is in use. We can check firmware at every MCU boot and execute only when file ingerrity is authenticated. Otherwise performe failover (e.g. start USB bootloader). 
 
-Custom USB Bootloader supporting CRC32 checking during boot will be open sourced soon. Stay tune :)
+Custom USB Bootloader supporting CRC32 checking during boot will be open sourced soon. Stay tuned :)
 
 
 
