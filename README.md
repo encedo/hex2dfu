@@ -6,6 +6,7 @@ Simple command line tool to convert file format from Intel HEX to STM32 DFU.
 
 
 
+
 Compile
 =======
 
@@ -14,6 +15,8 @@ hex2dfu is a single C file application and can be easly compile by any ANSI C co
 gcc hex2dfu.c -o hex2dfu.exe
 
 I`m using mingw32 under Windows, change parameters regards your enviroment.
+
+
 
 
 
@@ -41,5 +44,12 @@ Using
 
 
 
+
 Automated CRC32 generation in very usefull when custom bootloader is in use. We can check firmware at every MCU boot and execute only when file ingerrity is authenticated. Otherwise performe failover (e.g. start USB bootloader). 
+
+Custom USB Bootloader supporting CRC32 checking during boot will be open sourced soon. Stay tune :)
+
+
+
+
 
