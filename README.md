@@ -1,7 +1,7 @@
 hex2dfu
 =======
 
-Simple command line tool to convert file from Intel HEX to STM32 DFU.
+Simple command line tool to convert file format from Intel HEX to STM32 DFU.
 
 
 
