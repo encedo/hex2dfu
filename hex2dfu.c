@@ -4,19 +4,42 @@
 #include <string.h>
 #include <unistd.h>
 
-#define TARGET_NAME_ENCEDO  "Encedo"  
+#define TARGET_NAME_ENCEDO  "EncedoKey"
+// uncomment to add support for digital code signature using ED25519
+#define  ED25519_SUPPORT
+
+#ifdef ED25519_SUPPORT
+#include "ED25519/sha512.h"
+#include "ED25519/ed25519.h"
+
+/*
+To build:
+1. download ED25519 code from https://github.com/encedo/ed25519 or https://github.com/orlp/ed25519 to folder ED25519
+2. compile gcc hex2dfu.c ED25519/*.c -o hex2dfu.exe
+
+*/
+
+#endif
 
 void print_help(void);
 int  hex2bin(unsigned char *obuf, const char *ibuf, int len);
 int  check_checksum(unsigned char *inbuf, int len);
 unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile);
+
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 
-
+//efab5b0739a834bac702aeb5cd08ffe227908faaae501f910e7e07d8d41fbb06 
 int main (int argc, char **argv) {
   int i, c, vid =0x0483, pid = 0xdf11, ver = 0xffff;
   char *tar0 = NULL, *tar0_lab = NULL, *out_fn = NULL;
   FILE *inFile, *outFile;
+  
+#ifdef ED25519_SUPPORT  
+  unsigned char hash_buf[64];
+	sha512_context hash;	
+	unsigned char *ed25519_secret = NULL;
+  unsigned char public_key[32], private_key[64], signature[64];	 
+#endif
 
   unsigned int tar0_start_address;
   int tar0_len;
@@ -27,7 +50,7 @@ int main (int argc, char **argv) {
   unsigned int crc = 0, tmp, add_crc32 = 0;
   
   opterr = 0;
-  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:")) != -1) {
+  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:")) != -1) {
     switch (c) {
       case 'i':   //target0 input file name
         tar0 = optarg;
@@ -46,6 +69,14 @@ int main (int argc, char **argv) {
         break;
       case 'c':   //place crc32 at this address
         add_crc32 = strtol (optarg, NULL, 16);
+        break;
+      case 'S':   //ED25519 secret, hex
+#ifndef ED25519_SUPPORT
+        fprintf (stderr, "Code signing not supported!\n");
+        return 1;      
+#else
+        ed25519_secret = optarg; 
+#endif         
         break;
       case 'o':   //output file name
         out_fn = optarg;
@@ -70,19 +101,60 @@ int main (int argc, char **argv) {
     perror ("No output file specifed.\n");
     return 0;
   }
+
+#ifdef ED25519_SUPPORT  
+  if (ed25519_secret) {
+    c = hex2bin(ed25519_secret, ed25519_secret, strlen(ed25519_secret));
+    if (c != 32) {
+      perror ("ED25519 'secret' have to be 32bytes long.\n");
+      return 0;
+    }    
+    ed25519_create_keypair(public_key, private_key, ed25519_secret);
+  }
+#endif
   
   inFile = fopen ( tar0, "r");  
   tar0_buf = ihex2bin_buf(&tar0_start_address, &tar0_len, inFile);
+
   fclose (inFile);
   if (tar0_buf && (tar0_len > 0)) {
     printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
     printf("Data Length: %ub\r\n", tar0_len);
-    if ((add_crc32>0) && (add_crc32 < (tar0_start_address+tar0_len-4))) {              //-c request CRC32 placement at given address
+    if ((add_crc32>0) && (add_crc32 < (tar0_start_address+tar0_len-256))) {              //-c request CRC32 placement at given address
         add_crc32 -= tar0_start_address;
         tar0_buf[add_crc32 + 4] = tar0_len>>0  & 0xFF;                   //binary code length first(little endian)
         tar0_buf[add_crc32 + 5] = tar0_len>>8  & 0xFF;        
         tar0_buf[add_crc32 + 6] = tar0_len>>16 & 0xFF;        
         tar0_buf[add_crc32 + 7] = tar0_len>>24 & 0xFF;
+#ifdef ED25519_SUPPORT        
+        if (ed25519_secret) {
+            sha512_init(&hash);																			
+            sha512_update(&hash, tar0_buf, add_crc32);
+            sha512_update(&hash, tar0_buf+add_crc32+256, tar0_len-(add_crc32+256));
+            sha512_final(&hash, hash_buf);																
+            printf("SHA512: ");    
+            for(c=0; c<64; c++) {
+              printf("%02x", (unsigned char)hash_buf[c]);
+            }
+            printf("\r\n");    
+          
+            ed25519_sign(signature, hash_buf, 64, public_key, private_key);
+            memmove(tar0_buf+add_crc32+0x10, signature, 64);
+            memmove(tar0_buf+add_crc32+0x10+64, public_key, 32);
+            
+            printf("ED25519 PublicKey: ");    
+            for(c=0; c<32; c++) {
+                printf("%02x", (unsigned char)public_key[c]);
+            }
+            printf("\r\n");
+            
+            printf("ED25519 Signature: ");    
+            for(c=0; c<64; c++) {
+                printf("%02x", (unsigned char)signature[c]);
+            }
+            printf("\r\n");                
+        }        
+#endif        
         crc = crc32(0, tar0_buf, add_crc32);                             //calc CRC upto placement address
         crc = crc32(crc, tar0_buf+add_crc32+4, tar0_len-(add_crc32+4));  //calc the rest of - starting from placement+4 up to end
         tar0_buf[add_crc32] = crc>>0  & 0xFF;                            //CRC placement (little endian)
@@ -91,7 +163,7 @@ int main (int argc, char **argv) {
         tar0_buf[add_crc32 + 3] = crc>>24 & 0xFF;
         printf("Additional CRC32 data: 0x%08x:0x%08x\r\n",add_crc32+tar0_start_address ,crc);
     }
-  
+ 
     dfu_len = 11 + 274 + 8+ tar0_len + 16;
     dfu = calloc(1, dfu_len);
     if (dfu) {
@@ -176,8 +248,8 @@ int main (int argc, char **argv) {
 }
 
 void print_help(void) {
-  printf("STM32 hex2dfu version 1.0\r\n");
-  printf("(c) Encedo Ltd 2013-2014\r\n");
+  printf("STM32 hex2dfu version 1.1\r\n");
+  printf("(c) Encedo Ltd 2013-2015\r\n");
 	printf("Options:\r\n");
 	printf("-c        - place CRC23 under this addres (optional)\r\n");
 	printf("-d        - file version number (optional, default: 0xFFFF)\r\n");
@@ -185,6 +257,7 @@ void print_help(void) {
 	printf("-i        - Target0 HEX file name (mandatory)\r\n");
 	printf("-l        - Target0 name (optional, default: EncedoKey)\r\n");
 	printf("-o        - output DFU file name (mandatory)\r\n");
+	printf("-S        - ED25519 'secret' to sign the code (optional)\r\n");
 	printf("-p        - USB Pid (optional, default: 0xDF11)\r\n");
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
 	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
@@ -256,11 +329,11 @@ unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inF
           return dst;
         } else
         if (raw[3] == 0) {                                                        //>Data record - process
+          pos = elar + ( (unsigned int)raw[1]<<8 | (unsigned int)raw[2] );          //get start address of this chunk
           if (start_set==0) {
-            *start_address = elar;                                                     //set it as new start addres - only possible for first data record
+            *start_address = pos;                                                     //set it as new start addres - only possible for first data record
             start_set = 1;                                                             //only once - this is start address of thye binary data
           }
-          pos = elar + ( (unsigned int)raw[1]<<8 | (unsigned int)raw[2] );          //get start address of this chunk
           pos -= *start_address;
           cnt = raw[0];                                                                //get chunk size/length
           if (pos+cnt > *dst_len) {                                                    //enlarge buffer if required
@@ -388,4 +461,5 @@ unsigned int crc32(unsigned int crc, const void *buf, size_t size) {
 
 	return crc ^ ~0U;
 }
+
 
