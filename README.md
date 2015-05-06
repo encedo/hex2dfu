@@ -51,6 +51,16 @@ Using
 
    hex2dfu.exe -i infile.hex -o outfile.dfu -c 0x08011000 -S d4411fa9d5cb6f91b7bd18e4ab41e7d03bf37e1d738c12b923ef0f09de90e6cf
    
+
+5. Like above but extra data (-P) are added:
+
+   hex2dfu.exe -i infile.hex -o outfile.dfu -c 0x08011000 -S d4411fa9d5cb6f91b7bd18e4ab41e7d03bf37e1d738c12b923ef0f09de90e6cf -e -P DEADBEEF
+   
+
+6. Like above but additional data are public key based on signing secret:
+
+   hex2dfu.exe -i infile.hex -o outfile.dfu -c 0x08011000 -S d4411fa9d5cb6f91b7bd18e4ab41e7d03bf37e1d738c12b923ef0f09de90e6cf -e
+   
    
 Automated CRC32 generation in very usefull when custom bootloader is in use. We can check firmware at every MCU boot and execute only when file ingerrity is authenticated. Otherwise performe failover (e.g. start USB bootloader). 
 

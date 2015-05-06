@@ -38,7 +38,8 @@ int main (int argc, char **argv) {
   unsigned char hash_buf[64];
 	sha512_context hash;	
 	unsigned char *ed25519_secret = NULL;
-  unsigned char public_key[32], private_key[64], signature[64];	 
+	unsigned char *ed25519_public = NULL, ed25519_public_add = 0;
+  unsigned char public_key[32], private_key[64], signature[64], public_key_publisher[32];	 
 #endif
 
   unsigned int tar0_start_address;
@@ -50,7 +51,7 @@ int main (int argc, char **argv) {
   unsigned int crc = 0, tmp, add_crc32 = 0;
   
   opterr = 0;
-  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:")) != -1) {
+  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:P:e")) != -1) {
     switch (c) {
       case 'i':   //target0 input file name
         tar0 = optarg;
@@ -70,12 +71,28 @@ int main (int argc, char **argv) {
       case 'c':   //place crc32 at this address
         add_crc32 = strtol (optarg, NULL, 16);
         break;
-      case 'S':   //ED25519 secret, hex
+      case 'S':   //ED25519 secret (signing key), hex
 #ifndef ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
         return 1;      
 #else
         ed25519_secret = optarg; 
+#endif         
+        break;
+      case 'P':   //ED25519 publisher public, hex
+#ifndef ED25519_SUPPORT
+        fprintf (stderr, "Code signing not supported!\n");
+        return 1;      
+#else
+        ed25519_public = optarg; 
+#endif         
+        break;
+      case 'e':  
+#ifndef ED25519_SUPPORT
+        fprintf (stderr, "Code signing not supported!\n");
+        return 1;      
+#else
+        ed25519_public_add = 1; 
 #endif         
         break;
       case 'o':   //output file name
@@ -109,7 +126,18 @@ int main (int argc, char **argv) {
       perror ("ED25519 'secret' have to be 32bytes long.\n");
       return 0;
     }    
+    
     ed25519_create_keypair(public_key, private_key, ed25519_secret);
+    
+    if (ed25519_public) {
+      c = hex2bin(public_key_publisher, ed25519_public, strlen(ed25519_public));
+      if (c != 32) {
+        perror ("ED25519 'public' have to be 32bytes long.\n");
+        return 0;
+      }
+    } else {
+      memmove(public_key_publisher, public_key, 32);
+    } 
   }
 #endif
   
@@ -142,17 +170,26 @@ int main (int argc, char **argv) {
             memmove(tar0_buf+add_crc32+0x10, signature, 64);
             memmove(tar0_buf+add_crc32+0x10+64, public_key, 32);
             
-            printf("ED25519 PublicKey: ");    
+            printf("Signing PublicKey: ");    
             for(c=0; c<32; c++) {
                 printf("%02x", (unsigned char)public_key[c]);
             }
             printf("\r\n");
             
-            printf("ED25519 Signature: ");    
+            printf("Signature: ");    
             for(c=0; c<64; c++) {
                 printf("%02x", (unsigned char)signature[c]);
             }
             printf("\r\n");                
+
+            if (ed25519_public_add) {
+              memmove(tar0_buf+add_crc32+0x10+64+32, public_key_publisher, 32);
+              printf("Publisher PublicKey: ");    
+              for(c=0; c<32; c++) {
+                  printf("%02x", (unsigned char)public_key_publisher[c]);
+              }
+              printf("\r\n");            
+            }
         }        
 #endif        
         crc = crc32(0, tar0_buf, add_crc32);                             //calc CRC upto placement address
@@ -248,7 +285,7 @@ int main (int argc, char **argv) {
 }
 
 void print_help(void) {
-  printf("STM32 hex2dfu version 1.1\r\n");
+  printf("STM32 hex2dfu version 1.2\r\n");
   printf("(c) Encedo Ltd 2013-2015\r\n");
 	printf("Options:\r\n");
 	printf("-c        - place CRC23 under this addres (optional)\r\n");
@@ -258,6 +295,8 @@ void print_help(void) {
 	printf("-l        - Target0 name (optional, default: EncedoKey)\r\n");
 	printf("-o        - output DFU file name (mandatory)\r\n");
 	printf("-S        - ED25519 'secret' to sign the code (optional)\r\n");
+	printf("-P        - Publisher ED25519 'public' to verify firmware sign (optional)\r\n");
+	printf("-e        - add Publisher ED25519 based on 'secret' or the one form -P (if given)\r\n");
 	printf("-p        - USB Pid (optional, default: 0xDF11)\r\n");
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
 	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
