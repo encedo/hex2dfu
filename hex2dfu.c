@@ -33,6 +33,7 @@ int main (int argc, char **argv) {
   int i, c, vid =0x0483, pid = 0xdf11, ver = 0xffff;
   char *tar0 = NULL, *tar0_lab = NULL, *out_fn = NULL;
   FILE *inFile, *outFile;
+  unsigned char json_output = 0;
   
 #ifdef ED25519_SUPPORT  
   unsigned char hash_buf[64];
@@ -51,8 +52,11 @@ int main (int argc, char **argv) {
   unsigned int crc = 0, tmp, add_crc32 = 0;
   
   opterr = 0;
-  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:P:e")) != -1) {
+  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:P:eJ")) != -1) {
     switch (c) {
+      case 'J':   
+        json_output = 1;
+        break;
       case 'i':   //target0 input file name
         tar0 = optarg;
         break;
@@ -146,8 +150,6 @@ int main (int argc, char **argv) {
 
   fclose (inFile);
   if (tar0_buf && (tar0_len > 0)) {
-    printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
-    printf("Data Length: %ub\r\n", tar0_len);
     if ((add_crc32>0) && (add_crc32 < (tar0_start_address+tar0_len-256))) {              //-c request CRC32 placement at given address
         add_crc32 -= tar0_start_address;
         tar0_buf[add_crc32 + 4] = tar0_len>>0  & 0xFF;                   //binary code length first(little endian)
@@ -160,35 +162,13 @@ int main (int argc, char **argv) {
             sha512_update(&hash, tar0_buf, add_crc32);
             sha512_update(&hash, tar0_buf+add_crc32+256, tar0_len-(add_crc32+256));
             sha512_final(&hash, hash_buf);																
-            printf("SHA512: ");    
-            for(c=0; c<64; c++) {
-              printf("%02x", (unsigned char)hash_buf[c]);
-            }
-            printf("\r\n");    
-          
+         
             ed25519_sign(signature, hash_buf, 64, public_key, private_key);
             memmove(tar0_buf+add_crc32+0x10, signature, 64);
             memmove(tar0_buf+add_crc32+0x10+64, public_key, 32);
             
-            printf("Signing PublicKey: ");    
-            for(c=0; c<32; c++) {
-                printf("%02x", (unsigned char)public_key[c]);
-            }
-            printf("\r\n");
-            
-            printf("Signature: ");    
-            for(c=0; c<64; c++) {
-                printf("%02x", (unsigned char)signature[c]);
-            }
-            printf("\r\n");                
-
             if (ed25519_public_add) {
               memmove(tar0_buf+add_crc32+0x10+64+32, public_key_publisher, 32);
-              printf("Publisher PublicKey: ");    
-              for(c=0; c<32; c++) {
-                  printf("%02x", (unsigned char)public_key_publisher[c]);
-              }
-              printf("\r\n");            
             }
         }        
 #endif        
@@ -198,7 +178,6 @@ int main (int argc, char **argv) {
         tar0_buf[add_crc32 + 1] = crc>>8  & 0xFF;        
         tar0_buf[add_crc32 + 2] = crc>>16 & 0xFF;        
         tar0_buf[add_crc32 + 3] = crc>>24 & 0xFF;
-        printf("Additional CRC32 data: 0x%08x:0x%08x\r\n",add_crc32+tar0_start_address ,crc);
     }
  
     dfu_len = 11 + 274 + 8+ tar0_len + 16;
@@ -275,7 +254,74 @@ int main (int argc, char **argv) {
       if (c != 1) {
         printf ("error: write to output file\n");
       }
-      printf("Done.\r\n");
+      if (json_output) {
+          printf("{\"code_address\":\"0x%08x\"", tar0_start_address);
+          printf(",\"code_length\":\"0x%08x\"", tar0_len);
+          printf(",\"meta_address\":\"0x%08x\"", add_crc32+tar0_start_address);
+          if (ed25519_secret) {
+              printf(",\"sha512\":\"");
+              for(c=0; c<64; c++) {
+                printf("%02x", (unsigned char)hash_buf[c]);
+              }
+              printf("\"");
+                         
+              printf(",\"signature_pubkey\":\"");
+              for(c=0; c<32; c++) {
+                  printf("%02x", (unsigned char)public_key[c]);
+              }
+              printf("\"");
+              
+              printf(",\"signature\":\"");
+              for(c=0; c<64; c++) {
+                  printf("%02x", (unsigned char)signature[c]);
+              }
+              printf("\"");
+
+              if (ed25519_public_add) {
+                  printf(",\"publisher_pubkey\":\"");
+                  for(c=0; c<32; c++) {
+                      printf("%02x", (unsigned char)public_key_publisher[c]);
+                  }
+                  printf("\"");
+              }
+              printf(",\"crc32\":\"0x%08x\"", crc);              
+          }
+          
+          
+          printf("}\r\n");
+      } else {
+          printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
+          printf("Data Length: %ub\r\n", tar0_len);
+          if (ed25519_secret) {
+              printf("SHA512: ");    
+              for(c=0; c<64; c++) {
+                printf("%02x", (unsigned char)hash_buf[c]);
+              }
+              printf("\r\n");    
+                         
+              printf("Signing PublicKey: ");    
+              for(c=0; c<32; c++) {
+                  printf("%02x", (unsigned char)public_key[c]);
+              }
+              printf("\r\n");
+              
+              printf("Signature: ");    
+              for(c=0; c<64; c++) {
+                  printf("%02x", (unsigned char)signature[c]);
+              }
+              printf("\r\n");                
+
+              if (ed25519_public_add) {
+                  printf("Publisher PublicKey: ");    
+                  for(c=0; c<32; c++) {
+                      printf("%02x", (unsigned char)public_key_publisher[c]);
+                  }
+                  printf("\r\n");                 
+              }
+              printf("CRC32 data: 0x%08x @0x%08x\r\n", crc, add_crc32+tar0_start_address);
+          }
+          printf("Done.\r\n");
+      }
     }
   } else {
     printf ("error: processing input file\n");
@@ -285,9 +331,10 @@ int main (int argc, char **argv) {
 }
 
 void print_help(void) {
-  printf("STM32 hex2dfu version 1.2\r\n");
+  printf("STM32 hex2dfu version 1.3\r\n");
   printf("(c) Encedo Ltd 2013-2015\r\n");
 	printf("Options:\r\n");
+	printf("-J        - output in JSON structure except errors (optional)\r\n");
 	printf("-c        - place CRC23 under this addres (optional)\r\n");
 	printf("-d        - file version number (optional, default: 0xFFFF)\r\n");
 	printf("-h        - help\r\n");
