@@ -148,8 +148,9 @@ int main (int argc, char **argv) {
   
   inFile = fopen ( tar0, "r");  
   tar0_buf = ihex2bin_buf(&tar0_start_address, &tar0_len, inFile);
-
+  tar0_len = tar0_len + ((tar0_len & 0x07) ? (8 - (tar0_len & 0x07)) : 0);
   fclose (inFile);
+
   if (tar0_buf && (tar0_len > 0)) {
     if ((add_crc32>0) && (add_crc32 < (tar0_start_address+tar0_len-256))) {              //-c request CRC32 placement at given address
         add_crc32 -= tar0_start_address;
