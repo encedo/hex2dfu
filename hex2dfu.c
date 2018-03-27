@@ -354,7 +354,7 @@ void print_help(void) {
 #endif
 	printf("-p        - USB Pid (optional, default: 0xDF11)\r\n");
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
-	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
+	printf("Example: hex2dfu -i infile.hex -o outfile.dfu\r\n");
 }
 
 
