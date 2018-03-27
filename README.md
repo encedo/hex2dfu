@@ -21,7 +21,7 @@ I`m using mingw32 under Windows, change parameters regards your enviroment.
 To enable ED25519 code signing feature, download ED25519 code from https://github.com/encedo/ed25519 or https://github.com/orlp/ed25519 to folder ED25519
 and type:
 
-gcc hex2dfu.c ED25519/*.c -o hex2dfu.exe
+gcc -DED25519_SUPPORT hex2dfu.c ED25519/*.c -o hex2dfu.exe
 
 
 Using

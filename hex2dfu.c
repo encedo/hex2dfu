@@ -1,12 +1,13 @@
 #include <ctype.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #define TARGET_NAME_ENCEDO  "EncedoKey"
 // uncomment to add support for digital code signature using ED25519
-#define  ED25519_SUPPORT
+//#define  ED25519_SUPPORT
 
 #ifdef ED25519_SUPPORT
 #include "ED25519/sha512.h"
@@ -123,7 +124,7 @@ int main (int argc, char **argv) {
     return 0;
   }
 
-#ifdef ED25519_SUPPORT  
+#ifdef ED25519_SUPPORT
   if (ed25519_secret) {
     c = hex2bin(ed25519_secret, ed25519_secret, strlen(ed25519_secret));
     if (c != 32) {
@@ -156,7 +157,7 @@ int main (int argc, char **argv) {
         tar0_buf[add_crc32 + 5] = tar0_len>>8  & 0xFF;        
         tar0_buf[add_crc32 + 6] = tar0_len>>16 & 0xFF;        
         tar0_buf[add_crc32 + 7] = tar0_len>>24 & 0xFF;
-#ifdef ED25519_SUPPORT        
+#ifdef ED25519_SUPPORT
         if (ed25519_secret) {
             sha512_init(&hash);																			
             sha512_update(&hash, tar0_buf, add_crc32);
@@ -258,6 +259,7 @@ int main (int argc, char **argv) {
           printf("{\"code_address\":\"0x%08x\"", tar0_start_address);
           printf(",\"code_length\":\"0x%08x\"", tar0_len);
           printf(",\"meta_address\":\"0x%08x\"", add_crc32+tar0_start_address);
+#ifdef ED25519_SUPPORT
           if (ed25519_secret) {
               printf(",\"sha512\":\"");
               for(c=0; c<64; c++) {
@@ -286,12 +288,14 @@ int main (int argc, char **argv) {
               }
               printf(",\"crc32\":\"0x%08x\"", crc);              
           }
+#endif
           
           
           printf("}\r\n");
       } else {
           printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
           printf("Data Length: %ub\r\n", tar0_len);
+#ifdef ED25519_SUPPORT
           if (ed25519_secret) {
               printf("SHA512: ");    
               for(c=0; c<64; c++) {
@@ -320,6 +324,7 @@ int main (int argc, char **argv) {
               }
               printf("CRC32 data: 0x%08x @0x%08x\r\n", crc, add_crc32+tar0_start_address);
           }
+#endif
           printf("Done.\r\n");
       }
     }
