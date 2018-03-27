@@ -347,9 +347,11 @@ void print_help(void) {
 	printf("-i        - Target0 HEX file name (mandatory)\r\n");
 	printf("-l        - Target0 name (optional, default: EncedoKey)\r\n");
 	printf("-o        - output DFU file name (mandatory)\r\n");
+#ifdef ED25519_SUPPORT
 	printf("-S        - ED25519 'secret' to sign the code (optional)\r\n");
 	printf("-P        - Publisher ED25519 'public' to verify firmware sign (optional)\r\n");
 	printf("-e        - add Publisher ED25519 based on 'secret' or the one form -P (if given)\r\n");
+#endif
 	printf("-p        - USB Pid (optional, default: 0xDF11)\r\n");
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
 	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
