@@ -12,14 +12,6 @@
 #ifdef ED25519_SUPPORT
 #include "ED25519/sha512.h"
 #include "ED25519/ed25519.h"
-
-/*
-To build:
-1. download ED25519 code from https://github.com/encedo/ed25519 or https://github.com/orlp/ed25519 to folder ED25519
-2. compile gcc hex2dfu.c ED25519/*.c -o hex2dfu.exe
-
-*/
-
 #endif
 
 void print_help(void);
