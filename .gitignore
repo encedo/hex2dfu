@@ -1,6 +1,7 @@
 *~
 *.o
 
-/ed25519
+/ed25519/
+/ED25519/
 /hex2dfu
 /hex2dfu.exe

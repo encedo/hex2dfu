@@ -17,12 +17,12 @@ I`m using mingw32 under Windows, change parameters regards your environment.
 
 
 
-To enable ED25519 code signing feature, download ED25519 code from https://github.com/encedo/ed25519 or https://github.com/orlp/ed25519 to folder ed25519
-and type:
+To enable ED25519 code signing feature, download ED25519 code from https://github.com/encedo/ed25519 
+or https://github.com/orlp/ed25519 to folder `ED25519` and type:
 
 ```
-git clone https://github.com/encedo/ed25519
-gcc hex2dfu.c ed25519/*.c -o hex2dfu.exe
+git clone https://github.com/encedo/ed25519 ED25519
+gcc hex2dfu.c ED25519/src/*.c -o hex2dfu.exe
 ```
 
 

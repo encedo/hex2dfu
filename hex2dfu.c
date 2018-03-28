@@ -12,8 +12,8 @@
 #endif
 
 #if ED25519_SUPPORT
-#include "ED25519/sha512.h"
-#include "ED25519/ed25519.h"
+#include "ED25519/src/sha512.h"
+#include "ED25519/src/ed25519.h"
 #endif
 
 void print_help(void);
