@@ -10,7 +10,7 @@ Compile
 hex2dfu is a single C file application and can be easily built by any ANSI C compiler. No makefile required. Just type:
 
 ```
-gcc hex2dfu.c -o hex2dfu.exe
+gcc -DED25519_SUPPORT=0 hex2dfu.c -o hex2dfu.exe
 ```
 
 I`m using mingw32 under Windows, change parameters regards your environment.
@@ -22,7 +22,7 @@ and type:
 
 ```
 git clone https://github.com/encedo/ed25519
-gcc -DED25519_SUPPORT hex2dfu.c ed25519/*.c -o hex2dfu.exe
+gcc hex2dfu.c ed25519/*.c -o hex2dfu.exe
 ```
 
 

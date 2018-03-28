@@ -6,10 +6,12 @@
 #include <unistd.h>
 
 #define TARGET_NAME_ENCEDO  "EncedoKey"
-// uncomment to add support for digital code signature using ED25519
-//#define  ED25519_SUPPORT
 
-#ifdef ED25519_SUPPORT
+#ifndef ED25519_SUPPORT
+#define ED25519_SUPPORT 1
+#endif
+
+#if ED25519_SUPPORT
 #include "ED25519/sha512.h"
 #include "ED25519/ed25519.h"
 #endif
@@ -28,7 +30,7 @@ int main (int argc, char **argv) {
   FILE *inFile, *outFile;
   unsigned char json_output = 0;
   
-#ifdef ED25519_SUPPORT  
+#if ED25519_SUPPORT
   unsigned char hash_buf[64];
 	sha512_context hash;	
 	unsigned char *ed25519_secret = NULL;
@@ -69,7 +71,7 @@ int main (int argc, char **argv) {
         add_crc32 = strtol (optarg, NULL, 16);
         break;
       case 'S':   //ED25519 secret (signing key), hex
-#ifndef ED25519_SUPPORT
+#if !ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
         return 1;      
 #else
@@ -77,7 +79,7 @@ int main (int argc, char **argv) {
 #endif         
         break;
       case 'P':   //ED25519 publisher public, hex
-#ifndef ED25519_SUPPORT
+#if !ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
         return 1;      
 #else
@@ -85,7 +87,7 @@ int main (int argc, char **argv) {
 #endif         
         break;
       case 'e':  
-#ifndef ED25519_SUPPORT
+#if !ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
         return 1;      
 #else
@@ -116,7 +118,7 @@ int main (int argc, char **argv) {
     return 0;
   }
 
-#ifdef ED25519_SUPPORT
+#if ED25519_SUPPORT
   if (ed25519_secret) {
     c = hex2bin(ed25519_secret, ed25519_secret, strlen(ed25519_secret));
     if (c != 32) {
@@ -150,7 +152,7 @@ int main (int argc, char **argv) {
         tar0_buf[add_crc32 + 5] = tar0_len>>8  & 0xFF;        
         tar0_buf[add_crc32 + 6] = tar0_len>>16 & 0xFF;        
         tar0_buf[add_crc32 + 7] = tar0_len>>24 & 0xFF;
-#ifdef ED25519_SUPPORT
+#if ED25519_SUPPORT
         if (ed25519_secret) {
             sha512_init(&hash);																			
             sha512_update(&hash, tar0_buf, add_crc32);
@@ -252,7 +254,7 @@ int main (int argc, char **argv) {
           printf("{\"code_address\":\"0x%08x\"", tar0_start_address);
           printf(",\"code_length\":\"0x%08x\"", tar0_len);
           printf(",\"meta_address\":\"0x%08x\"", add_crc32+tar0_start_address);
-#ifdef ED25519_SUPPORT
+#if ED25519_SUPPORT
           if (ed25519_secret) {
               printf(",\"sha512\":\"");
               for(c=0; c<64; c++) {
@@ -288,7 +290,7 @@ int main (int argc, char **argv) {
       } else {
           printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
           printf("Data Length: %ub\r\n", tar0_len);
-#ifdef ED25519_SUPPORT
+#if ED25519_SUPPORT
           if (ed25519_secret) {
               printf("SHA512: ");    
               for(c=0; c<64; c++) {
@@ -339,7 +341,7 @@ void print_help(void) {
 	printf("-i        - Target0 HEX file name (mandatory)\r\n");
 	printf("-l        - Target0 name (optional, default: EncedoKey)\r\n");
 	printf("-o        - output DFU file name (mandatory)\r\n");
-#ifdef ED25519_SUPPORT
+#if ED25519_SUPPORT
 	printf("-S        - ED25519 'secret' to sign the code (optional)\r\n");
 	printf("-P        - Publisher ED25519 'public' to verify firmware sign (optional)\r\n");
 	printf("-e        - add Publisher ED25519 based on 'secret' or the one form -P (if given)\r\n");
