@@ -6,7 +6,7 @@
 
 #define TARGET_NAME_ENCEDO  "EncedoKey"
 // uncomment to add support for digital code signature using ED25519
-#define  ED25519_SUPPORT
+//#define  ED25519_SUPPORT
 
 #ifdef ED25519_SUPPORT
 #include "ED25519/sha512.h"
@@ -26,7 +26,7 @@ int  hex2bin(unsigned char *obuf, const char *ibuf, int len);
 int  check_checksum(unsigned char *inbuf, int len);
 unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile);
 
-uint32_t crc32(uint32_t crc, const void *buf, size_t size);
+unsigned int crc32(unsigned int crc, const void *buf, size_t size);
 
 //efab5b0739a834bac702aeb5cd08ffe227908faaae501f910e7e07d8d41fbb06 
 int main (int argc, char **argv) {
@@ -258,6 +258,7 @@ int main (int argc, char **argv) {
           printf("{\"code_address\":\"0x%08x\"", tar0_start_address);
           printf(",\"code_length\":\"0x%08x\"", tar0_len);
           printf(",\"meta_address\":\"0x%08x\"", add_crc32+tar0_start_address);
+#ifdef ED25519_SUPPORT        
           if (ed25519_secret) {
               printf(",\"sha512\":\"");
               for(c=0; c<64; c++) {
@@ -286,12 +287,13 @@ int main (int argc, char **argv) {
               }
               printf(",\"crc32\":\"0x%08x\"", crc);              
           }
-          
+#endif          
           
           printf("}\r\n");
       } else {
           printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
           printf("Data Length: %ub\r\n", tar0_len);
+#ifdef ED25519_SUPPORT        
           if (ed25519_secret) {
               printf("SHA512: ");    
               for(c=0; c<64; c++) {
@@ -320,6 +322,7 @@ int main (int argc, char **argv) {
               }
               printf("CRC32 data: 0x%08x @0x%08x\r\n", crc, add_crc32+tar0_start_address);
           }
+#endif
           printf("Done.\r\n");
       }
     }
