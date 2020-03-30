@@ -24,7 +24,7 @@ To build:
 void print_help(void);
 int  hex2bin(unsigned char *obuf, const char *ibuf, int len);
 int  check_checksum(unsigned char *inbuf, int len);
-unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile);
+unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile, unsigned int max_address);
 
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 
@@ -34,6 +34,7 @@ int main (int argc, char **argv) {
   char *tar0 = NULL, *tar0_lab = NULL, *out_fn = NULL;
   FILE *inFile, *outFile;
   unsigned char json_output = 0;
+  unsigned int max_address = 0x08200000;	
   
 #ifdef ED25519_SUPPORT  
   unsigned char hash_buf[64];
@@ -52,7 +53,7 @@ int main (int argc, char **argv) {
   unsigned int crc = 0, tmp, add_crc32 = 0;
   
   opterr = 0;
-  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:P:eJ")) != -1) {
+  while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:P:eJE:")) != -1) {
     switch (c) {
       case 'J':   
         json_output = 1;
@@ -75,6 +76,9 @@ int main (int argc, char **argv) {
       case 'c':   //place crc32 at this address
         add_crc32 = strtol (optarg, NULL, 16);
         break;
+      case 'E':   //max address
+        max_address = strtol (optarg, NULL, 16);
+        break;		    
       case 'S':   //ED25519 secret (signing key), hex
 #ifndef ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
@@ -146,7 +150,7 @@ int main (int argc, char **argv) {
 #endif
   
   inFile = fopen ( tar0, "r");  
-  tar0_buf = ihex2bin_buf(&tar0_start_address, &tar0_len, inFile);
+  tar0_buf = ihex2bin_buf(&tar0_start_address, &tar0_len, inFile, max_address);
 
   fclose (inFile);
   if (tar0_buf && (tar0_len > 0)) {
@@ -331,8 +335,8 @@ int main (int argc, char **argv) {
 }
 
 void print_help(void) {
-  printf("STM32 hex2dfu version 1.3\r\n");
-  printf("(c) Encedo Ltd 2013-2015\r\n");
+  printf("STM32 hex2dfu version 1.4\r\n");
+  printf("(c) Encedo Ltd 2013-2020\r\n");
 	printf("Options:\r\n");
 	printf("-J        - output in JSON structure except errors (optional)\r\n");
 	printf("-c        - place CRC23 under this addres (optional)\r\n");
@@ -346,6 +350,7 @@ void print_help(void) {
 	printf("-e        - add Publisher ED25519 based on 'secret' or the one form -P (if given)\r\n");
 	printf("-p        - USB Pid (optional, default: 0xDF11)\r\n");
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
+	printf("-E        - Maximum possible address\r\n");
 	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
 }
 
@@ -390,7 +395,7 @@ int check_checksum(unsigned char *inbuf, int len) {
 
 
 // more details: http://en.wikipedia.org/wiki/Intel_HEX
-unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile) {
+unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile, unsigned int max_address) {
   unsigned int  lines = 0, total = 0, oneline_len, elar = 0, pos, cnt;
   unsigned char oneline [512], raw[256], start_set = 0, *dst = NULL;
   
@@ -419,6 +424,10 @@ unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inF
           if (start_set==0) {
             *start_address = pos;                                                     //set it as new start addres - only possible for first data record
             start_set = 1;                                                             //only once - this is start address of thye binary data
+          }
+          if (pos >= max_address) {
+            *dst_len = total;                                                       //max address limit has been reached
+            return dst;                                                             //stop processing and return what's done 
           }
           pos -= *start_address;
           cnt = raw[0];                                                                //get chunk size/length
