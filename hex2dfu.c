@@ -30,6 +30,7 @@ uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 
 //efab5b0739a834bac702aeb5cd08ffe227908faaae501f910e7e07d8d41fbb06 
 int main (int argc, char **argv) {
+  int targen_number = 0;
   int i, c, vid =0x0483, pid = 0xdf11, ver = 0xffff;
   char *tar0 = NULL, *tar0_lab = NULL, *out_fn = NULL;
   FILE *inFile, *outFile;
@@ -69,6 +70,9 @@ int main (int argc, char **argv) {
         break;
       case 'v':   //VID
         vid = strtol (optarg, NULL, 16);
+        break;
+      case 't': // Target Number
+        targen_number = strtol(optarg, NULL, 16);
         break;
       case 'd':   //device version
         ver = strtol (optarg, NULL, 16);
@@ -202,7 +206,7 @@ int main (int argc, char **argv) {
       c = 11;
       memmove(dfu+c, "Target", 6);                                //szSignature 'Target'
       c += 6;
-      dfu[c++] = 0x00;                                            //bAlternateSettings        //to check
+      dfu[c++] = targen_number;                                   //bAlternateSettings        //to check
       if (tar0_lab) {
         dfu[c]  = 0x01;                                                           //bTargetNamed
         memmove(dfu+c+4, tar0_lab, strlen(tar0_lab)>254?254:strlen(tar0_lab));    //szTargetName
@@ -350,6 +354,7 @@ void print_help(void) {
 	printf("-e        - add Publisher ED25519 based on 'secret' or the one form -P (if given)\r\n");
 	printf("-p        - USB Pid (optional, default: 0xDF11)\r\n");
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
+        printf("-t        - Target Number (optional, default: 0x0)\r\n");
 	printf("-E        - Maximum possible address\r\n");
 	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
 }
