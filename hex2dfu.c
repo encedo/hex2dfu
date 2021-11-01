@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <unistd.h>
+
+#define MAX_IN_HEX  16
 
 #define TARGET_NAME_ENCEDO  "EncedoKey"
 // uncomment to add support for digital code signature using ED25519
@@ -28,37 +31,41 @@ unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inF
 
 unsigned int crc32(unsigned int crc, const void *buf, size_t size);
 
-//efab5b0739a834bac702aeb5cd08ffe227908faaae501f910e7e07d8d41fbb06 
+//efab5b0739a834bac702aeb5cd08ffe227908faaae501f910e7e07d8d41fbb06
 int main (int argc, char **argv) {
   int i, c, vid =0x0483, pid = 0xdf11, ver = 0xffff;
-  char *tar0 = NULL, *tar0_lab = NULL, *out_fn = NULL;
+  char *tar0_lab = NULL, *out_fn = NULL;
   FILE *inFile, *outFile;
   unsigned char json_output = 0;
-  
-#ifdef ED25519_SUPPORT  
+  char *in_hex[MAX_IN_HEX];
+  int image_cnt = 0;
+
+#ifdef ED25519_SUPPORT
   unsigned char hash_buf[64];
 	sha512_context hash;	
 	unsigned char *ed25519_secret = NULL;
 	unsigned char *ed25519_public = NULL, ed25519_public_add = 0;
-  unsigned char public_key[32], private_key[64], signature[64], public_key_publisher[32];	 
+  unsigned char public_key[32], private_key[64], signature[64], public_key_publisher[32];
 #endif
 
-  unsigned int tar0_start_address;
-  int tar0_len;
-  unsigned char *tar0_buf;
-  
+  unsigned int tar_start_address[MAX_IN_HEX];
+  int tar_len[MAX_IN_HEX];
+  unsigned char *tar_buf[MAX_IN_HEX];
+  int total_len = 0;
+
   unsigned char *dfu;
   int dfu_len;
   unsigned int crc = 0, tmp, add_crc32 = 0;
-  
+
   opterr = 0;
   while ((c = getopt (argc, argv, "hv:p:d:i:l:o:c:S:P:eJ")) != -1) {
     switch (c) {
-      case 'J':   
+      case 'J':
         json_output = 1;
         break;
-      case 'i':   //target0 input file name
-        tar0 = optarg;
+      case 'i':   //target input file names
+        in_hex[image_cnt] = optarg;
+        image_cnt++;
         break;
       case 'l':   //target0 label
         tar0_lab = optarg;
@@ -78,26 +85,26 @@ int main (int argc, char **argv) {
       case 'S':   //ED25519 secret (signing key), hex
 #ifndef ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
-        return 1;      
+        return 1;
 #else
-        ed25519_secret = optarg; 
-#endif         
+        ed25519_secret = optarg;
+#endif
         break;
       case 'P':   //ED25519 publisher public, hex
 #ifndef ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
-        return 1;      
+        return 1;
 #else
-        ed25519_public = optarg; 
-#endif         
+        ed25519_public = optarg;
+#endif
         break;
-      case 'e':  
+      case 'e':
 #ifndef ED25519_SUPPORT
         fprintf (stderr, "Code signing not supported!\n");
-        return 1;      
+        return 1;
 #else
-        ed25519_public_add = 1; 
-#endif         
+        ed25519_public_add = 1;
+#endif
         break;
       case 'o':   //output file name
         out_fn = optarg;
@@ -112,9 +119,9 @@ int main (int argc, char **argv) {
         break;
     }
   }
-  
-  if (!tar0) {
-    perror ("No input file specifed.\n");
+
+  if (image_cnt == 0) {
+    perror ("No input file(s) specifed.\n");
     return 0;
   }
 
@@ -123,16 +130,16 @@ int main (int argc, char **argv) {
     return 0;
   }
 
-#ifdef ED25519_SUPPORT  
+#ifdef ED25519_SUPPORT
   if (ed25519_secret) {
     c = hex2bin(ed25519_secret, ed25519_secret, strlen(ed25519_secret));
     if (c != 32) {
       perror ("ED25519 'secret' have to be 32bytes long.\n");
       return 0;
-    }    
-    
+    }
+
     ed25519_create_keypair(public_key, private_key, ed25519_secret);
-    
+
     if (ed25519_public) {
       c = hex2bin(public_key_publisher, ed25519_public, strlen(ed25519_public));
       if (c != 32) {
@@ -141,195 +148,227 @@ int main (int argc, char **argv) {
       }
     } else {
       memmove(public_key_publisher, public_key, 32);
-    } 
+    }
   }
 #endif
-  
-  inFile = fopen ( tar0, "r");  
-  tar0_buf = ihex2bin_buf(&tar0_start_address, &tar0_len, inFile);
 
-  fclose (inFile);
-  if (tar0_buf && (tar0_len > 0)) {
-    if ((add_crc32>0) && (add_crc32 < (tar0_start_address+tar0_len-256))) {              //-c request CRC32 placement at given address
-        add_crc32 -= tar0_start_address;
-        tar0_buf[add_crc32 + 4] = tar0_len>>0  & 0xFF;                   //binary code length first(little endian)
-        tar0_buf[add_crc32 + 5] = tar0_len>>8  & 0xFF;        
-        tar0_buf[add_crc32 + 6] = tar0_len>>16 & 0xFF;        
-        tar0_buf[add_crc32 + 7] = tar0_len>>24 & 0xFF;
-#ifdef ED25519_SUPPORT        
-        if (ed25519_secret) {
-            sha512_init(&hash);																			
-            sha512_update(&hash, tar0_buf, add_crc32);
-            sha512_update(&hash, tar0_buf+add_crc32+256, tar0_len-(add_crc32+256));
-            sha512_final(&hash, hash_buf);																
-         
-            ed25519_sign(signature, hash_buf, 64, public_key, private_key);
-            memmove(tar0_buf+add_crc32+0x10, signature, 64);
-            memmove(tar0_buf+add_crc32+0x10+64, public_key, 32);
-            
-            if (ed25519_public_add) {
-              memmove(tar0_buf+add_crc32+0x10+64+32, public_key_publisher, 32);
-            }
-        }        
-#endif        
-        crc = crc32(0, tar0_buf, add_crc32);                             //calc CRC upto placement address
-        crc = crc32(crc, tar0_buf+add_crc32+4, tar0_len-(add_crc32+4));  //calc the rest of - starting from placement+4 up to end
-        tar0_buf[add_crc32] = crc>>0  & 0xFF;                            //CRC placement (little endian)
-        tar0_buf[add_crc32 + 1] = crc>>8  & 0xFF;        
-        tar0_buf[add_crc32 + 2] = crc>>16 & 0xFF;        
-        tar0_buf[add_crc32 + 3] = crc>>24 & 0xFF;
+  for (i = 0; i < image_cnt; i++) {
+    inFile = fopen(in_hex[i], "r");
+    if (inFile == NULL) {
+      fprintf(stderr, "Failed to open %s\n", in_hex[i]);
+      return 0;
     }
- 
-    dfu_len = 11 + 274 + 8+ tar0_len + 16;
-    dfu = calloc(1, dfu_len);
-    if (dfu) {
-      //DFU Suffix
-      memmove(dfu, "DfuSe", 5);                                   //szSignature
-      dfu[5] = 0x01;                                              //bVersion
-      tmp = dfu_len - 0x10;                                       
-      dfu[6] = (unsigned char)(tmp & 0xFF);                     //DFUImageSize               (except Prefix!)
-      dfu[7] = (unsigned char)(tmp>>8 & 0xFF); 
-      dfu[8] = (unsigned char)(tmp>>16 & 0xFF); 
-      dfu[9] = (unsigned char)(tmp>>24 & 0xFF); 
-      dfu[10] = 1;                                                //bTargets
-      
-      
-      //DFU Image
-      c = 11;
-      memmove(dfu+c, "Target", 6);                                //szSignature 'Target'
-      c += 6;
-      dfu[c++] = 0x00;                                            //bAlternateSettings        //to check
-      if (tar0_lab) {
-        dfu[c]  = 0x01;                                                           //bTargetNamed
-        memmove(dfu+c+4, tar0_lab, strlen(tar0_lab)>254?254:strlen(tar0_lab));    //szTargetName
-      } else {
-        dfu[c]  = 0x01;                                                           //place default target name
-        memmove(dfu+c+4, TARGET_NAME_ENCEDO, strlen(TARGET_NAME_ENCEDO));         
+    tar_buf[i] = ihex2bin_buf(&tar_start_address[i], &tar_len[i], inFile);
+    fclose (inFile);
+
+    if ((tar_buf[i] == NULL) || (tar_len[i] < 0)) {
+      fprintf(stderr, "Failed to parse %s\n", in_hex[i]);
+      return 0;
+    }
+
+    total_len += tar_len[i];
+
+    if ((add_crc32 > 0) &&
+        (add_crc32 < (tar_start_address[i] + tar_len[i] - 256))) {              //-c request CRC32 placement at given address
+      add_crc32 -= tar_start_address[i];
+      tar_buf[i][add_crc32 + 4] = tar_len[i]>>0  & 0xFF;                   //binary code length first(little endian)
+      tar_buf[i][add_crc32 + 5] = tar_len[i]>>8  & 0xFF;
+      tar_buf[i][add_crc32 + 6] = tar_len[i]>>16 & 0xFF;
+      tar_buf[i][add_crc32 + 7] = tar_len[i]>>24 & 0xFF;
+#ifdef ED25519_SUPPORT
+      if (ed25519_secret) {
+        sha512_init(&hash);
+        sha512_update(&hash, tar_buf[i], add_crc32);
+        sha512_update(&hash, tar_buf[i] + add_crc32 + 256, tar_len[i] - (add_crc32 + 256));
+        sha512_final(&hash, hash_buf);
+
+        ed25519_sign(signature, hash_buf, 64, public_key, private_key);
+        memmove(tar_buf[i] + add_crc32 + 0x10, signature, 64);
+        memmove(tar_buf[i] + add_crc32 + 0x10 + 64, public_key, 32);
+
+        if (ed25519_public_add) {
+          memmove(tar_buf[i] + add_crc32 + 0x10 + 64 + 32, public_key_publisher, 32);
+        }
       }
-      c += 259;
-      tmp = 8 + tar0_len;                                         //ImageElement length (8+bin_data)
-      dfu[c++] = tmp & 0xFF;                                      //dwTargetSize
-      dfu[c++] = tmp>>8 & 0xFF;
-      dfu[c++] = tmp>>16 & 0xFF;
-      dfu[c++] = tmp>>24 & 0xFF;                                              
-      dfu[c] = 0x01;                                              //dwNbElements
-      c += 4;
-      
-      //Image Element
-      dfu[c++] = tar0_start_address & 0xFF;                       //dwElementAddress
-      dfu[c++] = tar0_start_address>>8 & 0xFF;
-      dfu[c++] = tar0_start_address>>16 & 0xFF;
-      dfu[c++] = tar0_start_address>>24 & 0xFF;                                              
-      dfu[c++] = tar0_len & 0xFF;                                 //dwElementSize
-      dfu[c++] = tar0_len>>8 & 0xFF;
-      dfu[c++] = tar0_len>>16 & 0xFF;
-      dfu[c++] = tar0_len>>24 & 0xFF;                                                 
-      memmove(dfu+c, tar0_buf, tar0_len);
-      
-      //DFU Suffix
-      c = dfu_len - 16;
-      dfu[c++] = ver & 0xFF;                                      //bcdDeviceLo
-      dfu[c++] = ver>>8 & 0xFF; 
-      dfu[c++] = pid & 0xFF;                                      //idProductLo
-      dfu[c++] = pid>>8 & 0xFF; 
-      dfu[c++] = vid & 0xFF;                                      //idVendorLo
-      dfu[c++] = vid>>8 & 0xFF; 
-      dfu[c++] = 0x1A;                                            //bcdDFULo
-      dfu[c++] = 0x01;
-      dfu[c++] = 'U';                                             //ucDfuSignature
-      dfu[c++] = 'F';
-      dfu[c++] = 'D';
-      dfu[c++] = 16;                                              //bLength
-      crc = 0xFFFFFFFF & -crc32(0, dfu, c)  - 1 ;
-      dfu[c++] = crc>>0 & 0xFF;                                   //dwCRC
-      dfu[c++] = crc>>8 & 0xFF;
-      dfu[c++] = crc>>16 & 0xFF;
-      dfu[c++] = crc>>24 & 0xFF;                                              
-      
-
-      //write DFU to file
-      outFile = fopen (out_fn, "wb");
-      c = fwrite (dfu,  dfu_len, 1, outFile);
-      fclose(outFile);
-      if (c != 1) {
-        printf ("error: write to output file\n");
-      }
-      if (json_output) {
-          printf("{\"code_address\":\"0x%08x\"", tar0_start_address);
-          printf(",\"code_length\":\"0x%08x\"", tar0_len);
-          printf(",\"meta_address\":\"0x%08x\"", add_crc32+tar0_start_address);
-#ifdef ED25519_SUPPORT        
-          if (ed25519_secret) {
-              printf(",\"sha512\":\"");
-              for(c=0; c<64; c++) {
-                printf("%02x", (unsigned char)hash_buf[c]);
-              }
-              printf("\"");
-                         
-              printf(",\"signature_pubkey\":\"");
-              for(c=0; c<32; c++) {
-                  printf("%02x", (unsigned char)public_key[c]);
-              }
-              printf("\"");
-              
-              printf(",\"signature\":\"");
-              for(c=0; c<64; c++) {
-                  printf("%02x", (unsigned char)signature[c]);
-              }
-              printf("\"");
-
-              if (ed25519_public_add) {
-                  printf(",\"publisher_pubkey\":\"");
-                  for(c=0; c<32; c++) {
-                      printf("%02x", (unsigned char)public_key_publisher[c]);
-                  }
-                  printf("\"");
-              }
-              printf(",\"crc32\":\"0x%08x\"", crc);              
-          }
-#endif          
-          
-          printf("}\r\n");
-      } else {
-          printf("Data Start Address: 0x%08x\r\n", tar0_start_address);
-          printf("Data Length: %ub\r\n", tar0_len);
-#ifdef ED25519_SUPPORT        
-          if (ed25519_secret) {
-              printf("SHA512: ");    
-              for(c=0; c<64; c++) {
-                printf("%02x", (unsigned char)hash_buf[c]);
-              }
-              printf("\r\n");    
-                         
-              printf("Signing PublicKey: ");    
-              for(c=0; c<32; c++) {
-                  printf("%02x", (unsigned char)public_key[c]);
-              }
-              printf("\r\n");
-              
-              printf("Signature: ");    
-              for(c=0; c<64; c++) {
-                  printf("%02x", (unsigned char)signature[c]);
-              }
-              printf("\r\n");                
-
-              if (ed25519_public_add) {
-                  printf("Publisher PublicKey: ");    
-                  for(c=0; c<32; c++) {
-                      printf("%02x", (unsigned char)public_key_publisher[c]);
-                  }
-                  printf("\r\n");                 
-              }
-              printf("CRC32 data: 0x%08x @0x%08x\r\n", crc, add_crc32+tar0_start_address);
-          }
 #endif
-          printf("Done.\r\n");
-      }
+      crc = crc32(0, tar_buf[i], add_crc32);                             //calc CRC upto placement address
+      crc = crc32(crc, tar_buf[i] + add_crc32 + 4, tar_len[i] - (add_crc32 + 4));  //calc the rest of - starting from placement+4 up to end
+      tar_buf[i][add_crc32 + 0] = crc>>0  & 0xFF;                            //CRC placement (little endian)
+      tar_buf[i][add_crc32 + 1] = crc>>8  & 0xFF;
+      tar_buf[i][add_crc32 + 2] = crc>>16 & 0xFF;
+      tar_buf[i][add_crc32 + 3] = crc>>24 & 0xFF;
     }
+  }
+
+  //Total dfu len
+  dfu_len =
+    11 +              //Prefix
+    274 +             //Target prefix
+    (8 * image_cnt) + //Image header
+    total_len +       //Images len
+    16;               //Suffix
+  dfu = calloc(1, dfu_len);
+  if (dfu == NULL) {
+    perror("Failed to aloocate out buffer\n");
+    return 0;
+  }
+
+  //DFU prefix
+  memmove(dfu, "DfuSe", 5);                                   //szSignature
+  dfu[5] = 0x01;                                              //bVersion
+  tmp = dfu_len - 0x10;
+  dfu[6] = (unsigned char)(tmp & 0xFF);                     //DFUImageSize               (except Prefix!)
+  dfu[7] = (unsigned char)(tmp>>8 & 0xFF);
+  dfu[8] = (unsigned char)(tmp>>16 & 0xFF);
+  dfu[9] = (unsigned char)(tmp>>24 & 0xFF);
+  dfu[10] = 1;                                                //bTargets
+
+  //DFU Image
+  //Target prefix
+  c = 11;
+  memmove(dfu + c, "Target", 6);                                //szSignature 'Target'
+  c += 6;
+  dfu[c++] = 0x00;                                            //bAlternateSettings        //to check
+  if (tar0_lab) {
+    dfu[c]  = 0x01;                                                           //bTargetNamed
+    memmove(dfu + c + 4, tar0_lab, (strlen(tar0_lab) > 254) ? 254 : strlen(tar0_lab));    //szTargetName
   } else {
-    printf ("error: processing input file\n");
+    dfu[c]  = 0x01;                                                           //place default target name
+    memmove(dfu + c + 4, TARGET_NAME_ENCEDO, strlen(TARGET_NAME_ENCEDO));
   }
-  
+  c += 259;
+  tmp = (8 * image_cnt) + total_len;                          //ImageElement length (8+bin_data)
+  dfu[c++] = (tmp >>  0) & 0xFF;                              //dwTargetSize
+  dfu[c++] = (tmp >>  8) & 0xFF;
+  dfu[c++] = (tmp >> 16) & 0xFF;
+  dfu[c++] = (tmp >> 24) & 0xFF;
+
+  dfu[c++] = (image_cnt >>  0) & 0xFF;                        //dwNbElements
+  dfu[c++] = (image_cnt >>  8) & 0xFF;
+  dfu[c++] = (image_cnt >> 16) & 0xFF;
+  dfu[c++] = (image_cnt >> 24) & 0xFF;
+
+  //Image Elements
+  for (i = 0; i < image_cnt; i++) {
+    dfu[c++] = (tar_start_address[i] >>  0) & 0xFF;           //dwElementAddress
+    dfu[c++] = (tar_start_address[i] >>  8) & 0xFF;
+    dfu[c++] = (tar_start_address[i] >> 16) & 0xFF;
+    dfu[c++] = (tar_start_address[i] >> 24) & 0xFF;
+    dfu[c++] = (tar_len[i] >>  0) & 0xFF;                     //dwElementSize
+    dfu[c++] = (tar_len[i] >>  8) & 0xFF;
+    dfu[c++] = (tar_len[i] >> 16) & 0xFF;
+    dfu[c++] = (tar_len[i] >> 24) & 0xFF;
+
+    memmove(dfu + c, tar_buf[i], tar_len[i]);
+    c += tar_len[i];
+  }
+
+  //DFU Suffix
+  c = dfu_len - 16;
+  dfu[c++] = (ver >> 0) & 0xFF;                               //bcdDeviceLo
+  dfu[c++] = (ver >> 8) & 0xFF;
+
+  dfu[c++] = (pid >> 0) & 0xFF;                               //idProductLo
+  dfu[c++] = (pid >> 8) & 0xFF;
+
+  dfu[c++] = (vid >> 0) & 0xFF;                               //idVendorLo
+  dfu[c++] = (vid >> 8) & 0xFF;
+  dfu[c++] = 0x1A;                                            //bcdDFULo
+  dfu[c++] = 0x01;
+  dfu[c++] = 'U';                                             //ucDfuSignature
+  dfu[c++] = 'F';
+  dfu[c++] = 'D';
+  dfu[c++] = 16;                                              //bLength
+  crc = 0xFFFFFFFF & - crc32(0, dfu, c) - 1;
+  dfu[c++] = (crc >>  0) & 0xFF;                              //dwCRC
+  dfu[c++] = (crc >>  8) & 0xFF;
+  dfu[c++] = (crc >> 16) & 0xFF;
+  dfu[c++] = (crc >> 24) & 0xFF;
+
+  //write DFU to file
+  outFile = fopen (out_fn, "wb");
+  c = fwrite (dfu,  dfu_len, 1, outFile);
+  fclose(outFile);
+  if (c != 1) {
+    printf ("error: write to output file\n");
+  }
+  if (json_output) {
+    /* TODO: for each input file? */
+    printf("{\"code_address\":\"0x%08x\"", tar_start_address[0]);
+    printf(",\"code_length\":\"0x%08x\"", tar_len[0]);
+    printf(",\"meta_address\":\"0x%08x\"", add_crc32 + tar_start_address[0]);
+#ifdef ED25519_SUPPORT
+    if (ed25519_secret) {
+      printf(",\"sha512\":\"");
+      for(c=0; c<64; c++) {
+        printf("%02x", (unsigned char)hash_buf[c]);
+      }
+      printf("\"");
+
+      printf(",\"signature_pubkey\":\"");
+      for(c=0; c<32; c++) {
+          printf("%02x", (unsigned char)public_key[c]);
+      }
+      printf("\"");
+
+      printf(",\"signature\":\"");
+      for(c=0; c<64; c++) {
+          printf("%02x", (unsigned char)signature[c]);
+      }
+      printf("\"");
+
+      if (ed25519_public_add) {
+          printf(",\"publisher_pubkey\":\"");
+          for(c=0; c<32; c++) {
+              printf("%02x", (unsigned char)public_key_publisher[c]);
+          }
+          printf("\"");
+      }
+      printf(",\"crc32\":\"0x%08x\"", crc);
+    }
+#endif
+    printf("}\r\n");
+  } else {
+    printf("Total elements: %d\n", image_cnt);
+    for (i = 0; i < image_cnt; i++) {
+      printf(" Element %d:\r\n", i);
+      printf("  Data Start:  0x%08x\r\n", tar_start_address[i]);
+      printf("  Data Length: %u bytes\r\n", tar_len[i]);
+    }
+#ifdef ED25519_SUPPORT
+    if (ed25519_secret) {
+      printf("SHA512: ");
+      for(c=0; c<64; c++) {
+        printf("%02x", (unsigned char)hash_buf[c]);
+      }
+      printf("\r\n");
+
+      printf("Signing PublicKey: ");
+      for(c=0; c<32; c++) {
+          printf("%02x", (unsigned char)public_key[c]);
+      }
+      printf("\r\n");
+
+      printf("Signature: ");
+      for(c=0; c<64; c++) {
+          printf("%02x", (unsigned char)signature[c]);
+      }
+      printf("\r\n");
+
+      if (ed25519_public_add) {
+          printf("Publisher PublicKey: ");
+          for(c=0; c<32; c++) {
+              printf("%02x", (unsigned char)public_key_publisher[c]);
+          }
+          printf("\r\n");
+      }
+      printf("CRC32 data: 0x%08x @0x%08x\r\n", crc, add_crc32+tar0_start_address);
+    }
+#endif
+  }
+
+  printf("Done.\r\n");
+
   return 0;
 }
 
@@ -351,7 +390,6 @@ void print_help(void) {
 	printf("-v        - USB Vid (optional, default: 0x0483)\r\n");
 	printf("Example: hex2dfu -i infile.hex -i outfile.dfu\r\n");
 }
-
 
 int hex2bin(unsigned char *obuf, const char *ibuf, int len) {
     unsigned char c, c2;
@@ -396,14 +434,14 @@ int check_checksum(unsigned char *inbuf, int len) {
 unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inFile) {
   unsigned int  lines = 0, total = 0, oneline_len, elar = 0, pos, cnt;
   unsigned char oneline [512], raw[256], start_set = 0, *dst = NULL;
-  
+
   *dst_len = 1024*128;
   dst = malloc(*dst_len);                                                         //allocate 129kB of memory for bin data buffer
   if (dst == NULL) {
-      *dst_len = -2; 
+      *dst_len = -2;
       return NULL;
   }
-  
+
   *start_address = 0;
   while ( fgets (oneline, sizeof(oneline), inFile) != NULL ) {
     if (oneline[0] == ':') {                                                      //is valid record?
@@ -430,7 +468,7 @@ unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inF
               if (dst_new == NULL) {
                 *dst_len = -2;                                                         //allocation error - exit
                 free(dst);
-                return NULL;              
+                return NULL;
               } else {
                 *dst_len += 8192;
                 dst = dst_new;                                                         //allocation succesed - copy new pointer
@@ -459,7 +497,7 @@ unsigned char *ihex2bin_buf(unsigned int *start_address, int *dst_len, FILE *inF
 int  ihex2bin(FILE * outFile, FILE *inFile) {
   unsigned int  total = 0, oneline_len, elar = 0, start = 0xFFFFFFFF, pos, cnt;
   unsigned char oneline [512], raw[256];
-  
+
   while ( fgets (oneline , sizeof(oneline) , inFile) != NULL ) {
    //puts (oneline);
    if (oneline[0] == ':') {
@@ -469,7 +507,7 @@ int  ihex2bin(FILE * outFile, FILE *inFile) {
         if ((raw[0] == 2) && (raw[1] == 0) && (raw[2] == 0) && (raw[3] == 4)) {  //:020000040803EF
           elar = (unsigned int)raw[4]<<24 | (unsigned int) raw[5]<<16;
           if (start == 0xFFFFFFFF) {
-            start = elar;          
+            start = elar;
           }
         } else
         if ((raw[0] == 0) && (raw[1] == 0) && (raw[2] == 0) && (raw[3] == 1)) {  //:00000001FF
