@@ -1,1 +1,7 @@
+*~
+*.o
+
 ED25519
+ed25519
+hex2dfu
+hex2dfu.exe
